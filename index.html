@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Study Tracker • PWA</title>
+  <link rel="manifest" href="manifest.json">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --brand:#0d6efd;
+      --bg:#f8f9fa;
+    }
+    body{ background: var(--bg); }
+    .sticky-topbar{ position: sticky; top:0; z-index:1050; background:#fff; padding:.5rem; border-bottom:1px solid #e9ecef; }
+    .app-title{ font-weight:700; letter-spacing:.3px; }
+    .subject-card{ margin-bottom:1rem; }
+    .subtopic{ padding:.5rem .25rem; border-bottom:1px dashed #e5e7eb; }
+    .completed{ text-decoration:line-through; color: #6c757d; }
+    .stopwatch-display{ font-size:1.4rem; font-weight:700; }
+    .badge-soft{ background:#eef4ff; color:#0d6efd; }
+    .touch-lg button, .touch-lg .btn{ min-height:44px; }
+    .pill{ border-radius:999px; }
+    .metric{ font-weight:700; font-size:1.1rem; }
+    .stat{ font-size:.85rem; color:#6c757d; }
+    .grid-2{ display:grid; grid-template-columns:1fr 1fr; gap:.5rem; }
+    @media (max-width: 768px){
+      h4{ font-size:1.1rem; }
+      .card h5{ font-size:1rem; }
+    }
+  </style>
+</head>
+<body class="p-2 touch-lg">
+
+<!-- Sticky Top Bar -->
+<div class="sticky-topbar d-flex align-items-center justify-content-between gap-2 flex-wrap">
+  <div class="d-flex align-items-center gap-2">
+    <span class="app-title">📚 Study Tracker</span>
+    <span class="badge text-bg-light pill">PWA</span>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <button class="btn btn-outline-success btn-sm" onclick="exportData()">Export</button>
+    <input type="file" id="importFile" class="d-none" accept=".json" onchange="importData(event)">
+    <button class="btn btn-outline-primary btn-sm" onclick="document.getElementById('importFile').click()">Import</button>
+    <button class="btn btn-outline-info btn-sm" onclick="saveToJSONBin()">☁ Save Cloud</button>
+    <button class="btn btn-outline-dark btn-sm" onclick="loadFromJSONBin()">☁ Load Cloud</button>
+    <button class="btn btn-outline-danger btn-sm" onclick="resetData()">Reset</button>
+  </div>
+</div>
+
+<div class="container mt-3">
+  <div class="row g-3">
+    <!-- Left: Subjects & Stopwatch -->
+    <div class="col-12 col-lg-7">
+      <div class="card shadow-sm p-3 mb-3">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <h5 class="m-0">Add Subject</h5>
+          <div class="form-text">Estimate total hours to get a progress bar.</div>
+        </div>
+        <div class="row g-2 mt-2">
+          <div class="col-md-6 col-12">
+            <input id="subjectName" type="text" class="form-control" placeholder="Subject name">
+          </div>
+          <div class="col-md-4 col-6">
+            <input id="subjectTime" type="number" class="form-control" placeholder="Total time (hrs)">
+          </div>
+          <div class="col-md-2 col-6">
+            <button class="btn btn-primary w-100" onclick="addSubject()">Add</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card shadow-sm p-3 mb-3">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <h5 class="m-0">⏱ Smart Stopwatch</h5>
+          <div class="grid-2">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="pomodoroToggle" onchange="togglePomodoro(this.checked)">
+              <label class="form-check-label" for="pomodoroToggle">Pomodoro (25/5)</label>
+            </div>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="idleToggle" onchange="toggleIdleDetection(this.checked)" checked>
+              <label class="form-check-label" for="idleToggle">Idle pause</label>
+            </div>
+          </div>
+        </div>
+        <div class="mt-2 row g-2 align-items-center">
+          <div class="col-6">
+            <div id="stopwatchTime" class="stopwatch-display">00:00:00</div>
+            <div class="stat">Today&apos;s total</div>
+          </div>
+          <div class="col-6 d-flex gap-2 justify-content-end flex-wrap">
+            <button class="btn btn-success" onclick="startGlobalTimer()">Start</button>
+            <button class="btn btn-warning" onclick="pauseGlobalTimer()">Pause</button>
+            <button class="btn btn-secondary" onclick="resetGlobalTimer()">Reset</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="subjectsContainer"></div>
+    </div>
+
+    <!-- Right: Analytics, Revisions, Gamification -->
+    <div class="col-12 col-lg-5">
+
+      <div class="card shadow-sm p-3 mb-3">
+        <h5 class="m-0 mb-2">🎮 Gamification</h5>
+        <div class="d-flex gap-3 flex-wrap">
+          <div>
+            <div class="metric" id="xpValue">0 XP</div>
+            <div class="stat">Earn XP by completing items</div>
+          </div>
+          <div>
+            <div class="metric" id="streakValue">🔥 0-day streak</div>
+            <div class="stat">Study daily to keep streak</div>
+          </div>
+        </div>
+        <div class="mt-2" id="badgesRow"></div>
+      </div>
+
+      <div class="card shadow-sm p-3 mb-3">
+        <h5 class="m-0 mb-2">📅 Daily Completed</h5>
+        <div id="dailyProgress"></div>
+      </div>
+
+      <div class="card shadow-sm p-3 mb-3">
+        <h5 class="m-0 mb-2">🔁 Revisions</h5>
+        <div class="mb-2">
+          <span class="badge badge-soft pill">Today</span>
+        </div>
+        <div id="revisionToday" class="mb-2"></div>
+        <div class="mb-2">
+          <span class="badge text-bg-warning pill">Missed</span>
+        </div>
+        <div id="missedRevisions" class="mb-2"></div>
+        <div class="mb-2">
+          <span class="badge text-bg-success pill">History</span>
+        </div>
+        <div id="revisionHistory"></div>
+      </div>
+
+      <div class="card shadow-sm p-3 mb-3">
+        <h5 class="m-0 mb-2">🔔 Notifications</h5>
+        <div class="d-flex gap-2 flex-wrap">
+          <button class="btn btn-outline-primary" onclick="enableNotifications()">Enable Notifications</button>
+          <button class="btn btn-outline-secondary" onclick="scheduleDailyReminder()">Daily 8 PM reminder</button>
+          <button class="btn btn-outline-success" onclick="testNotification()">Test</button>
+        </div>
+        <div class="form-text mt-2">Notifications work while the app is open. Background/push requires a server, so we keep it client-only.</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Completion Modal -->
+<div class="modal fade" id="completionModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Mark Subtopic Completed</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <label>Enter time spent (hours & minutes):</label>
+        <div class="row g-2 mt-2">
+          <div class="col">
+            <input type="number" id="timeHours" class="form-control" placeholder="Hours" min="0">
+          </div>
+          <div class="col">
+            <input type="number" id="timeMinutes" class="form-control" placeholder="Minutes" min="0" max="59">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-success" onclick="confirmCompletion()">Confirm</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Exit Modal (Save to cloud or exit) -->
+<div class="modal fade" id="exitModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Leaving the app</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        Do you want to save your progress to the cloud before exiting?
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="exitNoSave">Exit without Saving</button>
+        <button class="btn btn-primary" id="exitSave">Save & Exit</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// ===== JSONBin (hardcoded) =====
+const JSONBIN_KEY = "$2a$10$x7iYQ5v/L.Y209vLI6g.k.EHLjFVR//Ogd8os5wea1kt87j8guB9m";
+const JSONBIN_BIN = "68a80f4f43b1c97be92520b6";
+
+// ===== State =====
+let subjects = JSON.parse(localStorage.getItem("subjects")) || [];
+let dailyLog = JSON.parse(localStorage.getItem("dailyLog")) || {};
+let revisionHistory = JSON.parse(localStorage.getItem("revisionHistory")) || {};
+let stopwatchLog = JSON.parse(localStorage.getItem("stopwatchLog")) || {};
+let gamification = JSON.parse(localStorage.getItem("gamification")) || { xp: 0, streak: 0, badges: [] };
+
+let selectedSubtopic = null;
+let hasUnsavedChanges = false; // track local changes since last cloud save/load
+
+// Global stopwatch (not tied to a single subtopic)
+let globalTimer = null;
+let isRunning = false;
+let pomodoroMode = false;
+let pomodoroTimer = null;
+let idleDetection = true;
+let idleTimer = null;
+const IDLE_LIMIT_MS = 2 * 60 * 1000; // 2 min
+
+function markDirty(){ hasUnsavedChanges = true; }
+function todayStr(){ return new Date().toISOString().split("T")[0]; }
+
+function saveLocal(){
+  localStorage.setItem("subjects", JSON.stringify(subjects));
+  localStorage.setItem("dailyLog", JSON.stringify(dailyLog));
+  localStorage.setItem("revisionHistory", JSON.stringify(revisionHistory));
+  localStorage.setItem("stopwatchLog", JSON.stringify(stopwatchLog));
+  localStorage.setItem("gamification", JSON.stringify(gamification));
+  markDirty();
+}
+
+// ===== JSONBin Save/Load =====
+async function saveToJSONBin(){
+  try{
+    const payload = { subjects, dailyLog, revisionHistory, stopwatchLog, gamification };
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Master-Key": JSONBIN_KEY
+      },
+      body: JSON.stringify(payload)
+    });
+    if(!res.ok){
+      const txt = await res.text();
+      throw new Error("Save failed " + res.status + ": " + txt);
+    }
+    hasUnsavedChanges = false;
+    alert("☁ Saved to JSONBin!");
+  }catch(e){
+    console.error("JSONBin Save Error:", e);
+    alert("Cloud save error: " + e.message);
+  }
+}
+
+async function loadFromJSONBin(){
+  try{
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN}/latest`, {
+      headers: {
+        "Content-Type": "application/json",
+        "X-Master-Key": JSONBIN_KEY
+      }
+    });
+    if(!res.ok){
+      const txt = await res.text();
+      throw new Error("Load failed " + res.status + ": " + txt);
+    }
+    const json = await res.json();
+    console.log("JSONBin raw:", json);
+    const data = json.record || {};
+    subjects = data.subjects || [];
+    dailyLog = data.dailyLog || {};
+    revisionHistory = data.revisionHistory || {};
+    stopwatchLog = data.stopwatchLog || {};
+    gamification = data.gamification || { xp: 0, streak: 0, badges: [] };
+    saveLocal();
+    hasUnsavedChanges = false;
+    renderAll();
+    alert("☁ Loaded from JSONBin!");
+  }catch(e){
+    console.error("JSONBin Load Error:", e);
+    alert("Cloud load error: " + e.message);
+  }
+}
+
+// ===== Smart Global Stopwatch =====
+function formatHMS(sec){
+  const h = String(Math.floor(sec/3600)).padStart(2,"0");
+  const m = String(Math.floor((sec%3600)/60)).padStart(2,"0");
+  const s = String(sec%60).padStart(2,"0");
+  return `${h}:${m}:${s}`;
+}
+function startGlobalTimer(){
+  if(isRunning) return;
+  isRunning = true;
+  globalTimer = setInterval(()=>{
+    const t = todayStr();
+    if(!stopwatchLog[t]) stopwatchLog[t] = 0;
+    stopwatchLog[t]++;
+    document.getElementById("stopwatchTime").innerText = formatHMS(stopwatchLog[t]);
+    saveLocal();
+    if(stopwatchLog[t] > 0 && stopwatchLog[t] % (60*30) === 0){ // every 30 mins
+      notify("Great job!", "You've studied for " + Math.floor(stopwatchLog[t]/60) + " minutes today.");
+    }
+  }, 1000);
+}
+function pauseGlobalTimer(){
+  isRunning = false;
+  clearInterval(globalTimer); globalTimer = null;
+}
+function resetGlobalTimer(){
+  if(confirm("Reset today's timer?")){
+    const t = todayStr();
+    stopwatchLog[t] = 0;
+    document.getElementById("stopwatchTime").innerText = "00:00:00";
+    saveLocal();
+  }
+}
+
+// Pomodoro
+function togglePomodoro(on){
+  pomodoroMode = on;
+  if(pomodoroTimer){ clearInterval(pomodoroTimer); pomodoroTimer = null; }
+  if(on){
+    notify("Pomodoro started", "Focus for 25 minutes.");
+    pomodoroTimer = setInterval(()=>{
+      notify("Break time", "Take a 5-minute break!");
+    }, 25*60*1000);
+  }
+}
+
+// Idle detection
+function toggleIdleDetection(on){
+  idleDetection = on;
+  if(!on && idleTimer){ clearTimeout(idleTimer); idleTimer = null; }
+}
+function resetIdleTimer(){
+  if(!idleDetection) return;
+  if(idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(()=>{
+    if(isRunning){
+      pauseGlobalTimer();
+      notify("Paused for inactivity", "Timer paused due to no activity.");
+    }
+  }, IDLE_LIMIT_MS);
+}
+["mousemove","keydown","click","touchstart"].forEach(evt=>{
+  window.addEventListener(evt, resetIdleTimer, {passive:true});
+});
+resetIdleTimer();
+
+// ===== Subjects / Subtopics =====
+function addSubject(){
+  const name = document.getElementById("subjectName").value.trim();
+  const time = parseFloat(document.getElementById("subjectTime").value);
+  if(!name || isNaN(time) || time <= 0) return alert("Enter valid subject and time");
+  subjects.push({ id: Date.now(), name, totalTime: time*3600, remainingTime: time*3600, subtopics: [] });
+  document.getElementById("subjectName").value = "";
+  document.getElementById("subjectTime").value = "";
+  saveLocal(); renderAll();
+}
+
+function addSubtopic(subjectId){
+  const subName = prompt("Enter subtopic name:");
+  if(!subName) return;
+  const subject = subjects.find(s=>s.id===subjectId);
+  subject.subtopics.push({
+    id: Date.now(), name: subName, timeSpent: 0, running:false,
+    completed:false, completedDate:null, timer:null,
+    revisions: []
+  });
+  saveLocal(); renderAll();
+}
+
+function toggleTimer(subjectId, subId){
+  const subject = subjects.find(s=>s.id===subjectId);
+  const sub = subject.subtopics.find(st=>st.id===subId);
+  if(sub.completed) return;
+  if(!sub.running){
+    sub.running = true;
+    sub.timer = setInterval(()=>{
+      sub.timeSpent++;
+      subject.remainingTime = Math.max(0, subject.remainingTime-1);
+      const t = todayStr();
+      if(!stopwatchLog[t]) stopwatchLog[t] = 0;
+      stopwatchLog[t]++;
+      saveLocal();
+      const el = document.getElementById(`time-${sub.id}`);
+      if(el) el.innerText = formatHMS(sub.timeSpent);
+      document.getElementById("stopwatchTime").innerText = formatHMS(stopwatchLog[t] || 0);
+    }, 1000);
+  } else {
+    sub.running = false;
+    clearInterval(sub.timer); sub.timer = null;
+  }
+  saveLocal(); renderAll();
+}
+
+function openCompletion(subjectId, subId){
+  selectedSubtopic = {subjectId, subId};
+  document.getElementById("timeHours").value = "";
+  document.getElementById("timeMinutes").value = "";
+  new bootstrap.Modal(document.getElementById("completionModal")).show();
+}
+
+function confirmCompletion(){
+  if(!selectedSubtopic) return;
+  const {subjectId, subId} = selectedSubtopic;
+  const subject = subjects.find(s=>s.id===subjectId);
+  const sub = subject.subtopics.find(st=>st.id===subId);
+
+  let hrs = parseInt(document.getElementById("timeHours").value)||0;
+  let mins = parseInt(document.getElementById("timeMinutes").value)||0;
+  let seconds = hrs*3600 + mins*60;
+
+  sub.timeSpent += seconds;
+  subject.remainingTime = Math.max(0, subject.remainingTime-seconds);
+  sub.completed = true;
+  sub.completedDate = todayStr();
+
+  // daily log
+  if(!dailyLog[sub.completedDate]) dailyLog[sub.completedDate] = [];
+  dailyLog[sub.completedDate].push({subject: subject.name, subtopic: sub.name});
+
+  // spaced repetition seeds
+  sub.revisions = [
+    {date: nextDate(1), interval:1, done:false},
+    {date: nextDate(3), interval:3, done:false}
+  ];
+
+  addXP(10);
+  checkBadges();
+
+  saveLocal();
+  bootstrap.Modal.getInstance(document.getElementById("completionModal")).hide();
+  renderAll();
+  notify("Completed!", `${sub.name} marked done.`);
+}
+
+function nextDate(days){
+  const d = new Date(); d.setDate(d.getDate()+days);
+  return d.toISOString().split("T")[0];
+}
+
+function markRevisionDone(subjectId, subId, date, difficulty="medium"){
+  const subject = subjects.find(s=>s.id===subjectId);
+  const sub = subject.subtopics.find(st=>st.id===subId);
+  const entry = sub.revisions.find(r=>r.date===date && !r.done);
+  if(entry){ entry.done = true; }
+
+  if(!revisionHistory[date]) revisionHistory[date] = [];
+  revisionHistory[date].push({subject: subject.name, subtopic: sub.name, difficulty});
+
+  const last = entry || {interval:1};
+  let newInterval = last.interval;
+  if(difficulty==="easy") newInterval = Math.max(2, Math.floor(last.interval*2));
+  else if(difficulty==="hard") newInterval = Math.max(1, last.interval);
+  else newInterval = last.interval + 1;
+  sub.revisions.push({date: nextDate(newInterval), interval:newInterval, done:false});
+
+  addXP(5);
+  checkBadges();
+
+  saveLocal(); renderAll();
+  notify("Revision logged", `${sub.name} reviewed (${difficulty}).`);
+}
+
+// ===== Rendering =====
+function renderSubjects(){
+  const container = document.getElementById("subjectsContainer");
+  container.innerHTML = "";
+  subjects.forEach(subj=>{
+    const percent = subj.totalTime>0 ? ((subj.totalTime - subj.remainingTime)/subj.totalTime*100).toFixed(1) : 0;
+    const card = document.createElement("div");
+    card.className = "card shadow-sm p-3 subject-card";
+    card.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h5 class="m-0">${subj.name}</h5>
+        <span class="badge badge-soft pill">Remaining: ${formatHMS(subj.remainingTime)}</span>
+      </div>
+      <div class="progress my-2" role="progressbar" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100">
+        <div class="progress-bar" style="width:${percent}%">${percent}%</div>
+      </div>
+      <div class="d-flex gap-2">
+        <button class="btn btn-sm btn-outline-primary" onclick="addSubtopic(${subj.id})">+ Subtopic</button>
+      </div>
+      <div class="mt-2">
+        ${subj.subtopics.map(st => `
+          <div class="subtopic d-flex justify-content-between align-items-center ${st.completed?'completed':''}">
+            <div>
+              <div><strong>${st.name}</strong></div>
+              <small id="time-${st.id}">${formatHMS(st.timeSpent)}</small>
+            </div>
+            <div class="d-flex gap-2">
+              ${!st.completed ? `
+                <button class="btn btn-sm ${st.running?'btn-danger':'btn-success'}" onclick="toggleTimer(${subj.id}, ${st.id})">${st.running?'Stop':'Start'}</button>
+                <button class="btn btn-sm btn-warning" onclick="openCompletion(${subj.id}, ${st.id})">Complete</button>
+              ` : `<span class="badge text-bg-success pill">Done</span>`}
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+function renderDailyLog(){
+  const container = document.getElementById("dailyProgress");
+  container.innerHTML = "";
+  Object.keys(dailyLog).sort().forEach(date => {
+    const div = document.createElement("div");
+    div.className = "mb-2";
+    div.innerHTML = `<strong>${date}</strong><ul class="mb-1">${dailyLog[date].map(item=>`<li>${item.subject} - ${item.subtopic}</li>`).join("")}</ul>`;
+    container.appendChild(div);
+  });
+}
+
+function renderStopwatchLog(){
+  const t = todayStr();
+  document.getElementById("stopwatchTime").innerText = formatHMS(stopwatchLog[t] || 0);
+}
+
+function renderRevision(){
+  const today = todayStr();
+  const todayContainer = document.getElementById("revisionToday");
+  const missedContainer = document.getElementById("missedRevisions");
+  const historyContainer = document.getElementById("revisionHistory");
+  todayContainer.innerHTML = ""; missedContainer.innerHTML = ""; historyContainer.innerHTML = "";
+
+  subjects.forEach(sub => {
+    sub.subtopics.forEach(st => {
+      if(st.completed && st.revisions){
+        st.revisions.forEach(r => {
+          if(!r.done){
+            const row = (html) => `<div class="revision-card card p-2 d-flex justify-content-between align-items-center mb-2">${html}</div>`;
+            if(r.date === today){
+              todayContainer.innerHTML += row(`
+                <div>${sub.name} - ${st.name} (Today)</div>
+                <div class="btn-group">
+                  <button class="btn btn-sm btn-success" onclick="markRevisionDone(${sub.id},${st.id},'${r.date}','easy')">Easy</button>
+                  <button class="btn btn-sm btn-primary" onclick="markRevisionDone(${sub.id},${st.id},'${r.date}','medium')">Medium</button>
+                  <button class="btn btn-sm btn-warning" onclick="markRevisionDone(${sub.id},${st.id},'${r.date}','hard')">Hard</button>
+                </div>`);
+            } else if(r.date < today){
+              missedContainer.innerHTML += row(`
+                <div>${sub.name} - ${st.name} <span class="text-danger">(Missed ${r.date})</span></div>
+                <div class="btn-group">
+                  <button class="btn btn-sm btn-success" onclick="markRevisionDone(${sub.id},${st.id},'${r.date}','easy')">Easy</button>
+                  <button class="btn btn-sm btn-primary" onclick="markRevisionDone(${sub.id},${st.id},'${r.date}','medium')">Medium</button>
+                  <button class="btn btn-sm btn-warning" onclick="markRevisionDone(${sub.id},${st.id},'${r.date}','hard')">Hard</button>
+                </div>`);
+            }
+          }
+        });
+      }
+    });
+  });
+
+  Object.keys(revisionHistory).sort().forEach(date => {
+    const div = document.createElement("div");
+    div.className = "mb-2";
+    div.innerHTML = `<strong>${date}</strong><ul class="mb-1">${revisionHistory[date].map(item=>`<li>${item.subject} - ${item.subtopic} <em>(${item.difficulty||'medium'})</em></li>`).join("")}</ul>`;
+    historyContainer.appendChild(div);
+  });
+}
+
+// ===== Gamification =====
+function addXP(points){
+  gamification.xp += points;
+  saveLocal(); renderGamification();
+}
+function computeStreak(){
+  let streak = 0;
+  const hasActivity = (date)=> (stopwatchLog[date] && stopwatchLog[date] > 0) || (dailyLog[date] && dailyLog[date].length>0);
+  const d = new Date();
+  for(;;){
+    const key = d.toISOString().split("T")[0];
+    if(hasActivity(key)){ streak++; d.setDate(d.getDate()-1); }
+    else break;
+  }
+  gamification.streak = streak;
+  saveLocal();
+}
+function checkBadges(){
+  const b = new Set(gamification.badges);
+  const totalCompleted = Object.values(dailyLog).reduce((a,arr)=>a+arr.length,0);
+  if(gamification.xp >= 100) b.add("Century XP");
+  if(totalCompleted >= 10) b.add("10 Completions");
+  if(gamification.streak >= 7) b.add("7-Day Streak");
+  gamification.badges = Array.from(b);
+  saveLocal(); renderGamification();
+}
+function renderGamification(){
+  computeStreak();
+  document.getElementById("xpValue").innerText = `${gamification.xp} XP`;
+  document.getElementById("streakValue").innerText = `🔥 ${gamification.streak}-day streak`;
+  const row = document.getElementById("badgesRow");
+  row.innerHTML = gamification.badges.length ? gamification.badges.map(name => `<span class="badge text-bg-info pill me-1 mb-1">🏅 ${name}</span>`).join("") : '<span class="text-muted">No badges yet</span>';
+}
+
+// ===== Import/Export/Reset =====
+function exportData(){
+  const data = {subjects, dailyLog, revisionHistory, stopwatchLog, gamification};
+  const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "study_tracker_data.json"; a.click();
+  URL.revokeObjectURL(url);
+}
+function importData(event){
+  const file = event.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try{
+      const data = JSON.parse(e.target.result);
+      subjects = data.subjects || [];
+      dailyLog = data.dailyLog || {};
+      revisionHistory = data.revisionHistory || {};
+      stopwatchLog = data.stopwatchLog || {};
+      gamification = data.gamification || {xp:0, streak:0, badges:[]};
+      saveLocal(); renderAll();
+      alert("Data imported successfully!");
+    }catch{ alert("Invalid JSON file"); }
+  };
+  reader.readAsText(file);
+}
+function resetData(){
+  if(confirm("Reset all data?")){
+    subjects=[]; dailyLog={}; revisionHistory={}; stopwatchLog={}; gamification={xp:0, streak:0, badges:[]};
+    saveLocal(); renderAll();
+  }
+}
+
+// ===== Notifications (client-side only) =====
+function enableNotifications(){
+  if(!("Notification" in window)) return alert("Notifications not supported.");
+  Notification.requestPermission().then(p=>{
+    if(p==="granted") notify("Notifications enabled","We'll remind you while the app is open.");
+  });
+}
+function notify(title, body){
+  if("Notification" in window && Notification.permission==="granted"){
+    new Notification(title, { body, icon: "icon-192.png" });
+  }
+}
+let dailyReminderTimer = null;
+function scheduleDailyReminder(hour=20, min=0){
+  if(dailyReminderTimer) clearInterval(dailyReminderTimer);
+  const check = ()=>{
+    const d = new Date();
+    if(d.getHours()===hour && d.getMinutes()===min && d.getSeconds()===0){
+      notify("Daily Study Reminder", "Did you complete your study & revisions today?");
+    }
+  };
+  dailyReminderTimer = setInterval(check, 1000);
+  alert("Daily reminder scheduled for 8:00 PM (tab must remain open).");
+}
+function testNotification(){ notify("Test Notification", "Looks good!"); }
+
+// ===== Render root =====
+function renderAll(){
+  renderSubjects();
+  renderDailyLog();
+  renderStopwatchLog();
+  renderRevision();
+  renderGamification();
+}
+
+// ===== Exit Modal handling =====
+let exitModalShown = false;
+window.addEventListener("beforeunload", function(e){
+  if(hasUnsavedChanges && !exitModalShown){
+    e.preventDefault();
+    e.returnValue = "";
+    const modal = new bootstrap.Modal(document.getElementById("exitModal"));
+    modal.show();
+    exitModalShown = true;
+  }
+});
+document.getElementById("exitSave").addEventListener("click", async ()=>{
+  try { await saveToJSONBin(); } finally {
+    exitModalShown = false;
+    hasUnsavedChanges = false;
+    window.location.href = "about:blank";
+  }
+});
+document.getElementById("exitNoSave").addEventListener("click", ()=>{
+  exitModalShown = false;
+  hasUnsavedChanges = false;
+  window.location.href = "about:blank";
+});
+
+// ===== PWA Service Worker =====
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('service-worker.js').then(()=>{
+    console.log("Service Worker registered");
+  }).catch(err=>console.log("SW failed", err));
+}
+
+// boot
+renderAll();
+</script>
+</body>
+</html>
